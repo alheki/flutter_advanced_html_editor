@@ -1,0 +1,61 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+  
+linter:
+  rules:
+    # Prefer single quotes
+    prefer_single_quotes: true
+    
+    # Require trailing commas
+    require_trailing_commas: true
+    
+    # Avoid empty statements
+    avoid_empty_else: true
+    
+    # Prefer final for variable declarations
+    prefer_final_fields: true
+    prefer_final_locals: true
+    
+    # Use key in widget constructors
+    use_key_in_widget_constructors: true
+    
+    # Sort imports
+    directives_ordering: true
+    
+    # Avoid print statements
+    avoid_print: false
+    
+    # Use const constructors
+    prefer_const_constructors: true
+    prefer_const_constructors_in_immutables: true
+    
+    # File names
+    file_names: true
+    
+    # Documentation
+    public_member_api_docs: false
+    
+    # Avoid relative imports
+    avoid_relative_lib_imports: true
+    
+    # Prefer collection literals
+    prefer_collection_literals: true
+    
+    # Avoid unnecessary containers
+    avoid_unnecessary_containers: true
+    
+    # Use string interpolation
+    prefer_interpolation_to_compose_strings: true
+    
+    # Sized box for whitespace
+    sized_box_for_whitespace: true
+    
+    # Use colored box
+    use_colored_box: true
+    
+    # Use decorated box
+    use_decorated_box: true
