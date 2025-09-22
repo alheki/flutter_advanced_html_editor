@@ -204,7 +204,9 @@ file_picker: ^6.1.1 – Image/file selection
 
 ## 🎬 Demo
 
-![Flutter Advanced HTML Editor Demo](docs/demo.gif)
+<p align="center">
+  <img src="docs/demo.gif" alt="Flutter Advanced HTML Editor Demo" width="500" />
+</p>
 
 🛤️ Roadmap
 
