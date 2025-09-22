@@ -10,6 +10,10 @@ A powerful and customizable HTML editor for Flutter.
 A comprehensive and feature-rich HTML editor for Flutter applications.
 It provides a powerful rich text editing experience with extensive formatting options, customizable themes, and a flexible toolbar system.
 
+## 🎬 Demo
+
+  <img src="docs/demo.gif" alt="Flutter Advanced HTML Editor Demo" width="300" />
+
 ✨ Features
 
 🎨 Rich Text Formatting: Bold, italic, underline, strikethrough, colors, fonts, and sizes
@@ -202,9 +206,6 @@ webview_flutter: ^4.4.2 – Render HTML editor
 
 file_picker: ^6.1.1 – Image/file selection
 
-## 🎬 Demo
-
-  <img src="docs/demo.gif" alt="Flutter Advanced HTML Editor Demo" width="300" />
 
 
 🛤️ Roadmap
