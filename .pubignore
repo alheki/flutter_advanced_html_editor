@@ -1,8 +1,29 @@
-# .pubignore
+# Flutter/Dart metadata
 .metadata
-app.json
+
+# Example build artifacts
 example/pubspec.lock
+
+# Node/Expo related files
+app.json
 expo-env.d.ts
-ios/
 package.json
 package-lock.json
+tsconfig.json
+
+# iOS auto-generated files
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Runner/GeneratedPluginRegistrant.h
+ios/Runner/GeneratedPluginRegistrant.m
+
+# Documentation/media not needed
+doc/demo.gif
+
+# Platform-specific (not needed for pub.dev)
+android/
+ios/
+windows/
+linux/
+macos/
+web/

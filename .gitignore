@@ -1,24 +1,9 @@
-# IDE / tool files
+# Dart & Flutter
 .dart_tool/
-.metadata
+.build/
 .idea/
 *.iml
 
 # Lock files
 pubspec.lock
 example/pubspec.lock
-
-# Node/JS files
-package.json
-package-lock.json
-tsconfig.json
-expo-env.d.ts
-app.json
-
-# Platform-specific (not needed for pub)
-android/
-ios/
-windows/
-linux/
-macos/
-web/
