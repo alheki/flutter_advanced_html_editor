@@ -1,14 +1,14 @@
 Flutter Advanced HTML Editor
 
-
-
 A powerful and customizable HTML editor for Flutter.
-
-
 
 
 A comprehensive and feature-rich HTML editor for Flutter applications.
 It provides a powerful rich text editing experience with extensive formatting options, customizable themes, and a flexible toolbar system.
+
+## 🎬 Demo
+
+<img src="https://raw.githubusercontent.com/alheki/flutter_advanced_html_editor/main/doc/demo.gif" width="300"  alt="Demo"/>
 
 ✨ Features
 
@@ -202,9 +202,6 @@ webview_flutter: ^4.4.2 – Render HTML editor
 
 file_picker: ^6.1.1 – Image/file selection
 
-## 🎬 Demo
-
-<img src="https://raw.githubusercontent.com/alheki/flutter_advanced_html_editor/main/doc/demo.gif" width="300" />
 
 
 🛤️ Roadmap
