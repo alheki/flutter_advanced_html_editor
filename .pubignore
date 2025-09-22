@@ -18,7 +18,7 @@ ios/Runner/GeneratedPluginRegistrant.h
 ios/Runner/GeneratedPluginRegistrant.m
 
 # Documentation/media not needed
-doc/demo.gif
+docs/demo.gif
 
 # Platform-specific (not needed for pub.dev)
 android/
