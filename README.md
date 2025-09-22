@@ -8,7 +8,7 @@ It provides a powerful rich text editing experience with extensive formatting op
 
 ## 🎬 Demo
 
-<img src="https://raw.githubusercontent.com/alheki/flutter_advanced_html_editor/main/doc/demo.gif" width="300"  alt="Demo"/>
+  <img src="doc/demo.gif" alt="Flutter Advanced HTML Editor Demo" width="300" />
 
 ✨ Features
 
