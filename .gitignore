@@ -1,21 +1,24 @@
-# Ignore build & tool files
+# IDE / tool files
 .dart_tool/
-.idea/
 .metadata
+.idea/
+*.iml
 
-# Ignore platform folders
-ios/
-android/
+# Lock files
+pubspec.lock
+example/pubspec.lock
 
-# Ignore Node/JS files
+# Node/JS files
 package.json
 package-lock.json
 tsconfig.json
 expo-env.d.ts
 app.json
 
-# Ignore IDE files
-*.iml
-
-# Ignore lock file in root
-pubspec.lock
+# Platform-specific (not needed for pub)
+android/
+ios/
+windows/
+linux/
+macos/
+web/

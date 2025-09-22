@@ -1,0 +1,8 @@
+# .pubignore
+.metadata
+app.json
+example/pubspec.lock
+expo-env.d.ts
+ios/
+package.json
+package-lock.json
