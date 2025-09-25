@@ -14,14 +14,21 @@ class FlutterAdvancedHtmlEditor extends StatefulWidget {
   final HtmlEditorController controller;
   final String initialContent;
   final double height;
+  final int? minLines;
   final HtmlEditorTheme theme;
+  final String? hintText;
   final Function(String)? onContentChanged;
   final Function(Map<String, dynamic>)? onSelectionChanged;
   final bool showToolbar;
   final List<HtmlEditorToolbarItem>? customToolbarItems;
   final BoxDecoration? boxDecoration;
+  final BoxDecoration? errorBoxDecoration;
   final double? borderRadius;
   final Widget? loadingWidget;
+  final int? maxLength;
+  final int? minLength;
+  final Function(String)? onLimitExceeded;
+  final bool enabled;
 
   const FlutterAdvancedHtmlEditor({
     super.key,
@@ -34,8 +41,15 @@ class FlutterAdvancedHtmlEditor extends StatefulWidget {
     this.showToolbar = true,
     this.customToolbarItems,
     this.boxDecoration,
+    this.errorBoxDecoration,
     this.borderRadius,
     this.loadingWidget,
+    this.maxLength,
+    this.minLength,
+    this.hintText,
+    this.onLimitExceeded,
+    this.enabled=true,
+    this.minLines,
   });
 
   @override
@@ -46,18 +60,23 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
   late WebViewController _webViewController;
   bool _isLoaded = false;
   String _currentContent = '';
+  String _pendingInitialContent = '';
+  bool _contentWasTruncated = false; // Track if content was truncated
   final Completer<void> _editorReadyCompleter = Completer<void>();
 
   @override
   void initState() {
     super.initState();
+
+    // Process initial content with smart truncation
+    _processInitialContent();
+
     _initializeWebView();
     widget.controller.setWidget(this);
 
-    // Fallback timer with longer duration
+    // Fallback timer
     Timer(const Duration(seconds: 10), () {
       if (mounted && !_isLoaded) {
-        // debugPrint('Editor initialization fallback timeout');
         setState(() {
           _isLoaded = true;
         });
@@ -67,6 +86,144 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
       }
     });
   }
+
+  /// Process and truncate initial content if needed
+  void _processInitialContent() {
+    _pendingInitialContent = widget.initialContent.substring(0, widget.maxLength);
+    _contentWasTruncated = false;
+
+    if (widget.initialContent.isNotEmpty && widget.maxLength != null) {
+      if (widget.initialContent.length > widget.maxLength!) {
+        // Use smart truncation that preserves words and HTML structure
+        _pendingInitialContent = _truncateHtmlContent(widget.initialContent, widget.maxLength!);
+        _contentWasTruncated = true;
+
+        // Log truncation for debugging
+        debugPrint('Initial content truncated: ${widget.initialContent.length} → ${_pendingInitialContent.length} characters');
+
+        // Optionally notify about truncation via callback
+        if (widget.onLimitExceeded != null) {
+          Future.microtask(() => widget.onLimitExceeded!(
+              'Initial content was truncated from ${widget.initialContent.length} to ${widget.maxLength} characters'
+          ),);
+        }
+      }
+    }
+  }
+
+  /// Smart HTML content truncation that preserves structure
+  String _truncateHtmlContent(String content, int maxLength) {
+    if (content.length <= maxLength) {
+      return content;
+    }
+
+    // First, try to truncate plain text and preserve basic structure
+    String truncated = content.substring(0, maxLength);
+
+    // If content appears to be HTML, try to maintain tag integrity
+    if (content.contains('<') && content.contains('>')) {
+      // Find the last complete tag before the cut-off point
+      final int lastCompleteTag = _findLastCompleteTag(truncated);
+      if (lastCompleteTag > maxLength * 0.7) { // If we found a good break point
+        truncated = truncated.substring(0, lastCompleteTag);
+      }
+
+      // Ensure we don't leave unclosed tags
+      truncated = _closeOpenTags(truncated);
+    } else {
+      // For plain text, try to break at word boundary
+      final int lastSpaceIndex = truncated.lastIndexOf(' ');
+      if (lastSpaceIndex > maxLength * 0.8) {
+        truncated = truncated.substring(0, lastSpaceIndex);
+      }
+    }
+
+    return truncated;
+  }
+
+  /// Find the last complete HTML tag in the truncated content
+  int _findLastCompleteTag(String truncated) {
+    final int lastClosingBracket = truncated.lastIndexOf('>');
+    if (lastClosingBracket == -1) return truncated.length;
+
+    // Look backwards for the corresponding opening bracket
+    final String beforeClosing = truncated.substring(0, lastClosingBracket);
+    final int lastOpeningBracket = beforeClosing.lastIndexOf('<');
+
+    if (lastOpeningBracket != -1) {
+      return lastClosingBracket + 1;
+    }
+
+    return truncated.length;
+  }
+
+  /// Close any open HTML tags to maintain valid structure
+  String _closeOpenTags(String html) {
+    // Simple approach: find unclosed tags and close them
+    final RegExp openTagRegex = RegExp(r'<(\w+)[^>]*>(?![^<]*</\1>)');
+    final List<String> openTags = [];
+
+    final Iterable<RegExpMatch> matches = openTagRegex.allMatches(html);
+    for (RegExpMatch match in matches) {
+      final String tagName = match.group(1)!.toLowerCase();
+      // Skip self-closing tags
+      if (!['img', 'br', 'hr', 'input', 'meta', 'link'].contains(tagName)) {
+        openTags.add(tagName);
+      }
+    }
+
+    // Close open tags in reverse order
+    String result = html;
+    for (String tag in openTags.reversed) {
+      result += '</$tag>';
+    }
+
+    return result;
+  }
+
+  /// Enhanced _loadEditor method using processed content
+  void _loadEditor() async {
+    try {
+      await _waitForEditorReady();
+
+      // Set limits after editor is ready
+      await _setLimits();
+
+      // Use processed initial content
+      if (_pendingInitialContent.isNotEmpty) {
+        await setContent(_pendingInitialContent);
+
+        // Update current content to reflect what was actually set
+        _currentContent = _pendingInitialContent;
+
+        // Trigger content changed callback if content was truncated
+        if (_contentWasTruncated && widget.onContentChanged != null) {
+          widget.onContentChanged!(_pendingInitialContent);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoaded = true;
+        });
+      }
+
+      if (!_editorReadyCompleter.isCompleted) {
+        _editorReadyCompleter.complete();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoaded = true;
+        });
+      }
+      if (!_editorReadyCompleter.isCompleted) {
+        _editorReadyCompleter.complete();
+      }
+    }
+  }
+
+
 
   void _initializeWebView() {
     _webViewController = WebViewController()
@@ -83,7 +240,6 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
           },
           onWebResourceError: (WebResourceError error) {
             // debugPrint('WebView error: ${error.description}');
-            // Don't fail completely on resource errors
             if (!_isLoaded) {
               Future.delayed(const Duration(milliseconds: 500), () {
                 if (!_isLoaded) {
@@ -103,12 +259,10 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
         },
       );
 
-    // Force load the initial content
     _loadInitialContent();
   }
 
   void _loadInitialContent() {
-    // Small delay to ensure WebView is ready
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) {
         final htmlContent = _generateHtmlContent();
@@ -117,37 +271,22 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
     });
   }
 
-  void _loadEditor() async {
+
+  Future<void> _setLimits() async {
     try {
-      // Wait for DOM to be ready and then check if editor is initialized
-      await _waitForEditorReady();
-
-      // Set initial content if provided
-      if (widget.initialContent.isNotEmpty) {
-        await setContent(widget.initialContent);
-      }
-
-      if (mounted) {
-        setState(() {
-          _isLoaded = true;
-        });
-      }
-
-      if (!_editorReadyCompleter.isCompleted) {
-        _editorReadyCompleter.complete();
-      }
-
-      // debugPrint('HTML Editor loaded successfully');
+      final limitsScript = '''
+        if (flutterEditor) {
+          flutterEditor.setLimits({
+            maxLength: ${widget.maxLength ?? 'null'},
+            minLength: 'null',
+            maxLines:  'null',
+            minLines: 'null'
+          });
+        }
+      ''';
+      await _webViewController.runJavaScript(limitsScript);
     } catch (e) {
-      // debugPrint('Error loading editor: $e');
-      if (mounted) {
-        setState(() {
-          _isLoaded = true; // Show editor even if there was an error
-        });
-      }
-      if (!_editorReadyCompleter.isCompleted) {
-        _editorReadyCompleter.complete();
-      }
+      // debugPrint('Error setting limits: $e');
     }
   }
 
@@ -163,7 +302,6 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
         );
 
         if (result.toString() == 'true') {
-          // debugPrint('Editor is ready after ${attempts + 1} attempts');
           return;
         }
       } catch (e) {
@@ -174,7 +312,6 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
       await Future.delayed(delay);
     }
 
-    // debugPrint('Editor initialization timeout after $maxAttempts attempts');
     throw Exception('Editor initialization timeout');
   }
 
@@ -194,6 +331,7 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
     <div class="editor-container">
         <div class="editor" id="editor" contenteditable="true" spellcheck="true" role="textbox" aria-label="Text editor">
         </div>
+        <div class="editor-status" id="editorStatus" style="display: none;"></div>
     </div>
     <script>
         ${_generateJavaScript()}
@@ -256,6 +394,27 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
             opacity: 0.6;
             pointer-events: none;
         }
+        
+        .editor-status {
+            padding: 8px 16px;
+            font-size: 12px;
+            background: ${widget.theme.surfaceColor};
+            border-top: 1px solid ${widget.theme.borderColor};
+            color: ${widget.theme.secondaryTextColor};
+            text-align: right;
+        }
+        
+        .editor-status.warning {
+            color: #ff6b6b;
+            background: rgba(255, 107, 107, 0.1);
+        }
+        
+        .editor-status.error {
+            color: #ff3333;
+            background: rgba(255, 51, 51, 0.1);
+        }
+        
+      
         
         .editor h1, .editor h2, .editor h3, .editor h4, .editor h5, .editor h6 {
             margin-bottom: 16px;
@@ -374,11 +533,18 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
         class FlutterHtmlEditor {
             constructor() {
                 this.editor = document.getElementById('editor');
+                this.statusElement = document.getElementById('editorStatus');
                 this.history = [];
                 this.historyStep = -1;
                 this.maxHistory = 50;
                 this.debounceTimer = null;
                 this.selectionTimer = null;
+                this.limits = {
+                    maxLength: null,
+                    minLength: null,
+                    maxLines: null,
+                    minLines: null
+                };
                 
                 this.init();
             }
@@ -396,9 +562,8 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
             
             setupEditor() {
                 this.editor.setAttribute('spellcheck', 'true');
-                this.editor.setAttribute('data-placeholder', 'Start typing...');
+                this.editor.setAttribute('data-placeholder', '${widget.hintText??'Start typing...'}');
                 
-                // Set default paragraph separator
                 try {
                     document.execCommand('defaultParagraphSeparator', false, 'p');
                 } catch (e) {
@@ -406,9 +571,17 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
                 }
             }
             
+            setLimits(limits) {
+                this.limits = { ...this.limits, ...limits };
+                this.updateStatus();
+            }
+            
             setupEventListeners() {
-                // Content change events
-                this.editor.addEventListener('input', () => {
+                this.editor.addEventListener('input', (e) => {
+                    if (!this.checkLimits(e)) {
+                        e.preventDefault();
+                        return false;
+                    }
                     this.debounceContentChange();
                 });
                 
@@ -416,22 +589,157 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
                     this.handleKeyDown(e);
                 });
                 
-                // Selection change events
+                this.editor.addEventListener('beforeinput', (e) => {
+                    if (e.inputType === 'insertText' || e.inputType === 'insertCompositionText') {
+                        if (!this.checkTextInput(e.data || '')) {
+                            e.preventDefault();
+                            return false;
+                        }
+                    }
+                });
+                
                 document.addEventListener('selectionchange', () => {
                     if (document.activeElement === this.editor) {
                         this.debounceSelectionChange();
                     }
                 });
                 
-                // Paste handling
                 this.editor.addEventListener('paste', (e) => {
                     this.handlePaste(e);
                 });
                 
-                // Focus events
                 this.editor.addEventListener('focus', () => {
                     this.notifySelectionChanged();
                 });
+            }
+            
+            checkLimits(e) {
+                const currentText = this.getText();
+                const currentLines = this.getLineCount();
+                
+                // Check max length
+                if (this.limits.maxLength && currentText.length > this.limits.maxLength) {
+                    this.showLimitError('maxLength', currentText.length, this.limits.maxLength);
+                    return false;
+                }
+                
+                // Check max lines
+                if (this.limits.maxLines && currentLines > this.limits.maxLines) {
+                    this.showLimitError('maxLines', currentLines, this.limits.maxLines);
+                    return false;
+                }
+                
+                this.updateStatus();
+                return true;
+            }
+            
+            checkTextInput(text) {
+                const currentText = this.getText();
+                const newLength = currentText.length + text.length;
+                
+                if (this.limits.maxLength && newLength > this.limits.maxLength) {
+                    this.showLimitError('maxLength', newLength, this.limits.maxLength);
+                    return false;
+                }
+                
+                // Check if adding text would exceed line limit
+                const newLineCount = (text.match(/\\n/g) || []).length;
+                const currentLines = this.getLineCount();
+                
+                if (this.limits.maxLines && (currentLines + newLineCount) > this.limits.maxLines) {
+                    this.showLimitError('maxLines', currentLines + newLineCount, this.limits.maxLines);
+                    return false;
+                }
+                
+                return true;
+            }
+            
+            getLineCount() {
+                const text = this.getText();
+                if (!text.trim()) return 1;
+                return text.split('\\n').length;
+            }
+            
+            updateStatus() {
+                if (!this.statusElement) return;
+                
+                const text = this.getText();
+                const lines = this.getLineCount();
+                
+                let statusText = '';
+                let statusClass = '';
+                let showStatus = false;
+                
+                // Character count status
+                // if (this.limits.maxLength) {
+                //     const remaining = this.limits.maxLength - text.length;
+                //     statusText += \`Characters: \${text.length}/\${this.limits.maxLength}\`;
+                //    
+                //     if (remaining < 20) {
+                //         statusClass = remaining <= 0 ? 'error' : 'warning';
+                //         showStatus = true;
+                //     }
+                // }
+                //
+                // // Line count status
+                // if (this.limits.maxLines) {
+                //     if (statusText) statusText += ' | ';
+                //     const remaining = this.limits.maxLines - lines;
+                //     statusText += \`Lines: \${lines}/\${this.limits.maxLines}\`;
+                //    
+                //     if (remaining < 3) {
+                //         statusClass = remaining <= 0 ? 'error' : 'warning';
+                //         showStatus = true;
+                //     }
+                // }
+                
+                if (showStatus || this.limits.maxLength || this.limits.maxLines) {
+                    this.statusElement.textContent = statusText;
+                    this.statusElement.className = 'editor-status ' + statusClass;
+                    // this.statusElement.style.display = 'block';
+                    
+                    // Update editor styling
+                    this.editor.className = 'editor ' + (statusClass ? 'limit-' + statusClass : '');
+                } else {
+                    this.statusElement.style.display = 'none';
+                    this.editor.className = 'editor';
+                }
+            }
+            
+            showLimitError(type, current, limit) {
+                const message = type === 'maxLength' 
+                    ? \`Character limit exceeded: \${current}/\${limit}\`
+                    : \`Line limit exceeded: \${current}/\${limit}\`;
+                    
+                if (window.HtmlEditor && window.HtmlEditor.postMessage) {
+                    window.HtmlEditor.postMessage(JSON.stringify({
+                        type: 'limitExceeded',
+                        limitType: type,
+                        current: current,
+                        limit: limit,
+                        message: message
+                    }));
+                }
+            }
+            
+            validateMinimums() {
+                const text = this.getText();
+                const lines = this.getLineCount();
+                
+                const errors = [];
+                
+                if (this.limits.minLength && text.length < this.limits.minLength) {
+                    errors.push(\`Minimum \${this.limits.minLength} characters required (current: \${text.length})\`);
+                }
+                
+                if (this.limits.minLines && lines < this.limits.minLines) {
+                    errors.push(\`Minimum \${this.limits.minLines} lines required (current: \${lines})\`);
+                }
+                
+                return {
+                    valid: errors.length === 0,
+                    errors: errors
+                };
             }
             
             handleKeyDown(e) {
@@ -448,8 +756,14 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
                     }
                 }
                 
-                // Handle Enter key to ensure proper paragraph creation
+                // Handle Enter key
                 if (e.key === 'Enter') {
+                    const currentLines = this.getLineCount();
+                    if (this.limits.maxLines && currentLines >= this.limits.maxLines) {
+                        e.preventDefault();
+                        this.showLimitError('maxLines', currentLines + 1, this.limits.maxLines);
+                        return false;
+                    }
                     this.handleEnterKey(e);
                 }
             }
@@ -461,16 +775,14 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
                 const range = selection.getRangeAt(0);
                 const container = range.commonAncestorContainer;
                 
-                // If we're in a list, let the browser handle it naturally
                 const listItem = container.nodeType === Node.TEXT_NODE 
                     ? container.parentElement?.closest('li')
                     : container.closest?.('li');
                 
                 if (listItem) {
-                    return; // Let browser handle list item creation
+                    return;
                 }
                 
-                // For other cases, ensure we create paragraphs
                 if (!range.collapsed) {
                     range.deleteContents();
                 }
@@ -494,7 +806,6 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
                 const clipboardData = e.clipboardData || window.clipboardData;
                 if (!clipboardData) return;
                 
-                // Try to get HTML first, then fall back to plain text
                 let content = clipboardData.getData('text/html');
                 if (!content) {
                     content = clipboardData.getData('text/plain');
@@ -506,8 +817,26 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
                 }
                 
                 if (content) {
+                    // Check if pasted content would exceed limits
+                    const currentText = this.getText();
+                    const pastedText = this.extractTextFromHTML(content);
+                    const newLength = currentText.length + pastedText.length;
+                    
+                    if (this.limits.maxLength && newLength > this.limits.maxLength) {
+                        // Truncate content to fit
+                        const remaining = this.limits.maxLength - currentText.length;
+                        const truncatedText = pastedText.substring(0, remaining);
+                        content = truncatedText.replace(/\\n/g, '<br>');
+                    }
+                    
                     this.insertHTML(content);
                 }
+            }
+            
+            extractTextFromHTML(html) {
+                const div = document.createElement('div');
+                div.innerHTML = html;
+                return div.textContent || div.innerText || '';
             }
             
             sanitizePlainText(text) {
@@ -515,15 +844,12 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
             }
             
             sanitizeHTML(html) {
-                // Basic HTML sanitization - remove dangerous elements and attributes
                 const div = document.createElement('div');
                 div.innerHTML = html;
                 
-                // Remove script tags and event handlers
                 const scripts = div.querySelectorAll('script');
                 scripts.forEach(script => script.remove());
                 
-                // Remove dangerous attributes
                 const allElements = div.querySelectorAll('*');
                 allElements.forEach(el => {
                     Array.from(el.attributes).forEach(attr => {
@@ -540,6 +866,7 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
                 clearTimeout(this.debounceTimer);
                 this.debounceTimer = setTimeout(() => {
                     this.saveState();
+                    this.updateStatus();
                     this.notifyContentChanged();
                 }, 300);
             }
@@ -557,6 +884,7 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
                     if (success) {
                         this.editor.focus();
                         this.saveState();
+                        this.updateStatus();
                         this.notifyContentChanged();
                     }
                     return success;
@@ -577,6 +905,7 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
             setContent(content) {
                 this.editor.innerHTML = content || '';
                 this.saveState();
+                this.updateStatus();
                 this.notifyContentChanged();
             }
             
@@ -595,6 +924,7 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
                     const success = document.execCommand('insertHTML', false, html);
                     if (success) {
                         this.saveState();
+                        this.updateStatus();
                         this.notifyContentChanged();
                     }
                 } catch (e) {
@@ -605,7 +935,6 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
             saveState() {
                 const state = this.editor.innerHTML;
                 
-                // Don't save if content hasn't changed
                 if (this.history[this.historyStep] === state) {
                     return;
                 }
@@ -626,6 +955,7 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
                     this.historyStep--;
                     this.editor.innerHTML = this.history[this.historyStep];
                     this.editor.focus();
+                    this.updateStatus();
                     this.notifyContentChanged();
                     return true;
                 }
@@ -637,6 +967,7 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
                     this.historyStep++;
                     this.editor.innerHTML = this.history[this.historyStep];
                     this.editor.focus();
+                    this.updateStatus();
                     this.notifyContentChanged();
                     return true;
                 }
@@ -648,6 +979,8 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
                     const content = this.getContent();
                     const text = this.getText();
                     const words = text.trim() ? text.trim().split(/\\s+/).length : 0;
+                    const lines = this.getLineCount();
+                    const validation = this.validateMinimums();
                     
                     if (window.HtmlEditor && window.HtmlEditor.postMessage) {
                         window.HtmlEditor.postMessage(JSON.stringify({
@@ -655,7 +988,9 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
                             content: content,
                             text: text,
                             wordCount: words,
-                            charCount: text.length
+                            charCount: text.length,
+                            lineCount: lines,
+                            validation: validation
                         }));
                     }
                 } catch (e) {
@@ -821,6 +1156,10 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
             }
             return false;
         }
+        
+        function validateContent() {
+            return flutterEditor ? flutterEditor.validateMinimums() : { valid: false, errors: [] };
+        }
     ''';
   }
 
@@ -831,7 +1170,6 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
 
       switch (type) {
         case 'editorReady':
-          // debugPrint('Editor ready message received');
           if (mounted && !_isLoaded) {
             setState(() {
               _isLoaded = true;
@@ -842,7 +1180,9 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
           }
           break;
         case 'contentChanged':
-          _currentContent = data['content'] as String? ?? '';
+          setState(() {
+            _currentContent = data['content'] as String? ?? '';
+          });
           if (widget.onContentChanged != null) {
             widget.onContentChanged!(_currentContent);
           }
@@ -852,8 +1192,13 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
             widget.onSelectionChanged!(Map<String, dynamic>.from(data));
           }
           break;
+        case 'limitExceeded':
+          if (widget.onLimitExceeded != null) {
+            widget.onLimitExceeded!(data['message'] as String);
+          }
+          break;
         default:
-          // debugPrint('Unhandled message type: $type');
+        // debugPrint('Unhandled message type: $type');
       }
     } catch (e) {
       // debugPrint('Error handling JavaScript message: $e');
@@ -966,6 +1311,18 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
     }
   }
 
+  /// Validates content against minimum requirements
+  Future<Map<String, dynamic>> validateContent() async {
+    try {
+      await _editorReadyCompleter.future.timeout(const Duration(seconds: 5));
+      final result = await _webViewController.runJavaScriptReturningResult('validateContent()');
+      return json.decode(result.toString());
+    } catch (e) {
+      // debugPrint('Error validating content: $e');
+      return {'valid': false, 'errors': []};
+    }
+  }
+
   String _escapeForJavaScript(String text) {
     return text
         .replaceAll('\\', '\\\\')
@@ -976,7 +1333,6 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
   }
 
   String _unescapeFromJavaScript(String text) {
-    // Remove surrounding quotes if present
     String result = text;
     if (result.startsWith('"') && result.endsWith('"')) {
       result = result.substring(1, result.length - 1);
@@ -990,44 +1346,86 @@ class FlutterAdvancedHtmlEditorState extends State<FlutterAdvancedHtmlEditor> {
         .replaceAll('\\\\', '\\');
   }
 
+  String replaceHtmlTagsWith(String html, String replacement) {
+    return html.replaceAll(RegExp(r'<[^>]*>'), replacement);
+  }
+  int getLineCount() {
+    final textSpan = TextSpan(
+      text: replaceHtmlTagsWith(_currentContent, ''),
+    );
+
+    final tp = TextPainter(
+      text: textSpan,
+      textDirection: TextDirection.ltr,
+      maxLines: null,
+    );
+
+    tp.layout(maxWidth: MediaQuery.of(context).size.width*0.8);
+
+    print(replaceHtmlTagsWith(_currentContent, '').length);
+    return tp.computeLineMetrics().length;
+  }
+
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration:widget.boxDecoration?? BoxDecoration(
-        border: Border.all(
-          color: widget.theme.borderColorValue,
-        ),
-        borderRadius: BorderRadius.circular(widget.borderRadius??8),
-      ),
-      height: widget.height,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(widget.borderRadius??8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (widget.showToolbar)
-              HtmlEditorToolbar(
-                controller: widget.controller,
-                theme: widget.theme,
-                customItems: widget.customToolbarItems,
-                showLabels: false,
-              ),
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(widget.borderRadius??8),
-                child: _isLoaded
-                    ? WebViewWidget(controller: _webViewController)
-                    : ColoredBox(
-                        color: widget.theme.backgroundColorValue,
-                        child: widget.loadingWidget?? const Center(
-                          child: CircularProgressIndicator(),
-                        ),
-                      ),
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DecoratedBox(
+          decoration:widget.errorBoxDecoration?? widget.boxDecoration ??  BoxDecoration(
+            border: Border.all(
+              color: widget.theme.borderColorValue,
             ),
-          ],
+            borderRadius: BorderRadius.circular(widget.borderRadius ?? 8),
+          ),
+          child: ClipRRect(
+            borderRadius:widget.errorBoxDecoration?.borderRadius?? BorderRadius.circular(widget.borderRadius ?? 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (widget.showToolbar)
+                  HtmlEditorToolbar(
+                    controller: widget.controller,
+                    theme: widget.theme,
+                    customItems: widget.customToolbarItems,
+                    showLabels: false,
+                    enabled: widget.enabled,
+                  ),
+                Container(
+                  height:widget.minLines==null?widget.height: getLineCount()*26+((widget.minLines??0)*26),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+
+                  child: ClipRRect(
+                    borderRadius: widget.errorBoxDecoration?.borderRadius??BorderRadius.circular(widget.borderRadius ?? 8),
+                    child: _isLoaded
+                        ? Stack(
+                          children: [
+                            WebViewWidget(controller: _webViewController),
+                            if(!widget.enabled)
+                              Container(
+                                color: widget.theme.backgroundColorValue.withOpacity(0.5),
+                              ),
+                          ],
+
+                        )
+                        : ColoredBox(
+                      color: widget.theme.backgroundColorValue,
+                      child: widget.loadingWidget ?? const Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    ),
+                  ),
+                ),
+
+
+
+              ],
+            ),
+          ),
         ),
-      ),
+
+      ],
     );
   }
 

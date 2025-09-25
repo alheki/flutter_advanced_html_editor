@@ -50,6 +50,7 @@ class HtmlEditorToolbar extends StatefulWidget {
   final Widget? divider;
   final double height;
   final BoxDecoration? boxDecoration;
+  final bool enabled;
 
   const HtmlEditorToolbar({
     super.key,
@@ -58,6 +59,7 @@ class HtmlEditorToolbar extends StatefulWidget {
     this.customItems,
     this.showDivider = false,
     this.showLabels = false,
+    this.enabled = true,
     this.divider,
     this.boxDecoration,
     this.height = 60,
@@ -103,28 +105,37 @@ class _HtmlEditorToolbarState extends State<HtmlEditorToolbar> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: widget.height,
-      decoration: widget.boxDecoration ??
-          BoxDecoration(
-            color: widget.theme.toolbarBackgroundColorValue,
-            border: Border(
-              bottom: BorderSide(
-                color: widget.theme.borderColorValue,
-                width: 1,
+    return Stack(
+      children: [
+        Container(
+          height: widget.height,
+          decoration: widget.boxDecoration ??
+              BoxDecoration(
+                color: widget.theme.toolbarBackgroundColorValue,
+                border: Border(
+                  bottom: BorderSide(
+                    color: widget.theme.borderColorValue,
+                    width: 1,
+                  ),
+                ),
+              ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: _buildToolbarItems(),
               ),
             ),
           ),
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 8),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            children: _buildToolbarItems(),
-          ),
         ),
-      ),
+        if (!widget.enabled)
+          Container(
+            height: widget.height,
+            color: widget.theme.backgroundColorValue.withOpacity(0.5),
+          ),
+      ],
     );
   }
 
